@@ -1,0 +1,21 @@
+# Asistente RAG de recepción — dependencias del prototipo
+# Mantener esta lista mínima y justificada: cada paquete debe respaldar
+# directamente una capa de la arquitectura (ver README.md, sección Arquitectura).
+
+# Base vectorial embebida (capa: retrieval)
+chromadb>=0.5.5,<0.6.0
+
+# Cliente Python para Ollama (capas: embeddings, generation)
+ollama>=0.3.3,<0.4.0
+
+# Interfaz de usuario (capa: interface)
+streamlit>=1.38.0,<2.0.0
+
+# Configuración externalizada (config/settings.yaml)
+PyYAML>=6.0.2,<7.0.0
+
+# Métricas internas: lectura/escritura y agregación de CSV
+pandas>=2.2.2,<3.0.0
+
+# Testing
+pytest>=8.3.0,<9.0.0

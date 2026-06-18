@@ -1,0 +1,50 @@
+# =============================================================================
+# Configuración central — Asistente RAG de recepción
+# =============================================================================
+# Ningún parámetro ajustable debe vivir hardcodeado en el código. Si necesitas
+# cambiar un modelo, una ruta o el umbral de confianza, se hace aquí.
+# =============================================================================
+
+models:
+  embedding: "nomic-embed-text"
+  generation: "llama3.1:8b"        # alternativa equivalente: "mistral:7b"
+  ollama_host: "http://localhost:11434"
+
+paths:
+  docs_root: "docs/"
+  procedimientos: "docs/procedimientos/"
+  directorios: "docs/directorios/"
+  inventarios: "docs/inventarios/"
+  chroma_db: "data/chroma_db/"
+  gap_log: "metrics/gap_log.csv"
+  feedback_log: "metrics/feedback_log.csv"
+
+# Chunking diferenciado por tipo de documento (ver docs/decisiones/).
+# Procedimientos: texto narrativo largo -> chunks más grandes con solape.
+# Directorios/inventarios: entradas cortas tipo lista -> chunks pequeños sin solape.
+chunking:
+  procedimientos:
+    chunk_size: 500
+    chunk_overlap: 50
+    strategy: "by_section"
+  directorios:
+    chunk_size: 200
+    chunk_overlap: 0
+    strategy: "by_entry"
+  inventarios:
+    chunk_size: 200
+    chunk_overlap: 0
+    strategy: "by_entry"
+
+retrieval:
+  confidence_threshold: 0.65   # provisional — se recalibra en semana 3 con la batería de prueba
+  top_k: 3
+
+generation:
+  mode_default: "directo"      # directo | explicado
+  temperature: 0.2
+  max_tokens: 512
+
+logging:
+  level: "INFO"
+  log_file: "metrics/interactions.log"

@@ -1,0 +1,30 @@
+# --- Entorno Python ---
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# --- Base vectorial (se regenera desde docs/, no se versiona) ---
+data/chroma_db/
+data/chroma_db/*
+
+# --- Datos sensibles del hotel ---
+# Si este repo se hace público para portfolio, NUNCA deben subirse documentos
+# reales del hotel ni de huéspedes. Usar docs/ con contenido ficticio en la
+# versión pública; mantener los reales en un repo privado aparte.
+docs/**/*.real.*
+
+# --- Métricas operativas (pueden contener preguntas reales del personal) ---
+metrics/*.csv
+metrics/*.log
+!metrics/.gitkeep
+
+# --- Config local con secretos, si los hubiera ---
+.env
+*.local.yaml
+
+# --- IDE / SO ---
+.vscode/
+.idea/
+.DS_Store
