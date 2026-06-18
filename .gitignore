@@ -6,8 +6,8 @@ __pycache__/
 .pytest_cache/
 
 # --- Base vectorial (se regenera desde docs/, no se versiona) ---
-data/chroma_db/
 data/chroma_db/*
+!data/chroma_db/.gitkeep
 
 # --- Datos sensibles del hotel ---
 # Si este repo se hace público para portfolio, NUNCA deben subirse documentos
