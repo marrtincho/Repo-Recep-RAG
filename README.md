@@ -9,8 +9,11 @@ hotel, sin entrenar ni ajustar ningún modelo.
 **Alcance v1:** solo conocimiento fijo. No integra novedades del turno ni
 sistemas externos (p. ej. Ulyses).
 
-> Estado: en desarrollo activo. Este README se actualiza a medida que avanza
-> el proyecto; el detalle semana a semana vive en el historial de commits.
+> **Estado:** capa de ingesta completa y testeada (71 tests pasando) —
+> parser markdown genérico, splitter con solape, chunker tabular
+> (directorios/inventarios) y chunker de procedimientos con metadata de modo
+> directo/explicado. Siguiente paso: capa de embeddings + indexado en
+> ChromaDB. El detalle semana a semana vive en el historial de commits.
 
 ---
 
@@ -79,11 +82,17 @@ hotel-recepcion-rag/
 │   └── decisiones/            # registro de decisiones de diseño (ADRs)
 ├── src/
 │   ├── config.py              # única fuente de verdad para leer settings.yaml
-│   ├── ingestion/              # carga y chunking diferenciado
-│   ├── embeddings/             # generación de vectores
-│   ├── retrieval/              # búsqueda y umbral de confianza
-│   ├── generation/             # prompts y llamada al modelo
-│   └── orchestration/          # decisión escalar/responder + citación
+│   ├── ingestion/
+│   │   ├── models.py           # Chunk: contrato común hacia embeddings/retrieval
+│   │   ├── markdown_parser.py  # parseo genérico: encabezados, tablas, viñetas, metadatos
+│   │   ├── text_splitter.py    # división con solape respetando frases e ítems de lista
+│   │   ├── table_chunker.py    # directorios + inventarios (misma forma estructural)
+│   │   ├── procedure_chunker.py # procedimientos, por subsección, con metadata de modo
+│   │   └── pipeline.py         # load_documents(): punto de entrada público de la capa
+│   ├── embeddings/             # (siguiente) generación de vectores
+│   ├── retrieval/               # (siguiente) búsqueda y umbral de confianza
+│   ├── generation/              # (siguiente) prompts y llamada al modelo
+│   └── orchestration/           # (siguiente) decisión escalar/responder + citación
 ├── interface/
 │   └── app.py                  # interfaz Streamlit
 ├── metrics/
