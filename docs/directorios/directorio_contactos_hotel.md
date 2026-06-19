@@ -11,7 +11,7 @@
 
 | Departamento | Responsable / Puesto | Extensión interna | Cuándo contactar |
 |---|---|---|---|
-| Dirección | Carlos Boga / Director | 4016 | Emergencia / Pedido especifico / Falta de respuesta de subdireccion |
+| Dirección | Pedro / Director | 4000 | Emergencia / Pedido especifico / Falta de respuesta de subdireccion |
 | Recepción (jefe de turno) | | | |
 | Mantenimiento | | | |
 | Housekeeping / Pisos | | | |
