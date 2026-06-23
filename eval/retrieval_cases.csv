@@ -1,0 +1,93 @@
+pregunta,documento_esperado,nota
+# CHECK-IN
+que documentos necesita el huesped para hacer el check in?,Proceso de check-in.md,👎 antes recuperaba Deducciones (arreglado con ADR 0016)
+que documentos necesito para hacer el check in?,Proceso de check-in.md,variante ortográfica
+como hago un check in?,Proceso de check-in.md,pregunta directa del procedimiento
+puede usar el DNI de estados unidos?,Proceso de check-in.md,caso especial documentación
+puede usar pasaporte de noruega?,Proceso de check-in.md,caso especial documentación
+puede hacer un check in sin documentos?,Proceso de check-in.md,límite del procedimiento
+si la habitacion esta sucia que hago?,Proceso de check-in.md,caso especial del procedimiento
+# RESERVAS
+no encuentro la reserva de un cliente,Reserva no encontrada.md,pregunta directa
+si no encuentro la reserva donde puedo buscarla?,Reserva no encontrada.md,variante con contexto
+un cliente llego y no encuentro la reserva,Reserva no encontrada.md,formulación operativa real
+# PARKING
+un cliente ha venido con un ticket de parking,Parking.md,formulación operativa real
+que tengo que poner en el ticket de parking para validarlo?,Parking.md,pregunta específica del procedimiento
+como cargo un parking?,Parking.md,pregunta directa
+el cliente no esta alojado y tiene parking,Parking.md,caso especial
+# DEDUCCIONES Y CARGOS
+puedo quitar un cargo erroneo?,Deducciones y Abonos.md,👎 antes recuperaba check-in (arreglado con ADR 0016)
+como quito un cargo de desayuno?,Deducciones y Abonos.md,👍 en log
+que necesito para hacer una deduccion?,Deducciones y Abonos.md,pregunta directa
+como hago un abono contrafactura?,Deducciones y Abonos.md,terminología técnica
+# FACTURACIÓN A EMPRESA
+el cliente quiere factura a nombre de empresa,Factura a nombre de empresa.md,formulación operativa real
+como facturo a nombre de empresa?,Factura a nombre de empresa.md,pregunta directa
+como creo una nueva empresa para la facturacion,Factura a nombre de empresa.md,👍 en log
+que pasos seguir para crear una empresa nueva,Factura a nombre de empresa.md,variante de vocabulario
+# DIRECTORIO DE CONTACTOS
+cual es el numero de inma romeu?,directorio_contactos_hotel.md,👎 antes recuperaba check-in (arreglado con ADR 0016)
+como llamo al director?,directorio_contactos_hotel.md,consulta de contacto genérica
+como llamo al jefe de mantenimiento?,directorio_contactos_hotel.md,consulta de contacto por departamento
+cual es la extension de reservas?,directorio_contactos_hotel.md,consulta de contacto por departamento
+# MAPEO DE FACTURACIÓN
+con que concepto cargo el coffee español?,mapeo_conceptos_facturacion.md,👎 antes fallaba con nomic (arreglado con bge-m3)
+con que concepto cargo finger buffet?,mapeo_conceptos_facturacion.md,misma clase de pregunta
+con que concepto cargo las flores?,mapeo_conceptos_facturacion.md,👍 en log
+con que concepto cargo un ramo de flores?,mapeo_conceptos_facturacion.md,variante de vocabulario
+con que concepto cargo la lavanderia?,mapeo_conceptos_facturacion.md,consulta de concepto de facturación
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
