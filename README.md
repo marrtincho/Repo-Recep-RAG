@@ -9,11 +9,12 @@ hotel, sin entrenar ni ajustar ningún modelo.
 **Alcance v1:** solo conocimiento fijo. No integra novedades del turno ni
 sistemas externos (p. ej. Ulyses).
 
-> **Estado:** capa de ingesta completa y testeada (71 tests pasando) —
-> parser markdown genérico, splitter con solape, chunker tabular
-> (directorios/inventarios) y chunker de procedimientos con metadata de modo
-> directo/explicado. Siguiente paso: capa de embeddings + indexado en
-> ChromaDB. El detalle semana a semana vive en el historial de commits.
+> **Estado:** sistema completo de punta a punta y testeado (187 tests
+> pasando): ingesta, embeddings/indexado, retrieval, generation,
+> orchestration e interfaz Streamlit. El asistente mantiene memoria de
+> conversación y puede pedir aclaraciones en vez de adivinar o escalar
+> (ADR 0010) — ya no es de un solo turno. Validado con Ollama real en local.
+> El detalle semana a semana vive en el historial de commits.
 
 ---
 
@@ -58,7 +59,7 @@ Cada capa (`ingestion`, `embeddings`, `retrieval`, `generation`,
 
 | Capa | Herramienta | Por qué |
 |---|---|---|
-| Lenguaje | Python 3.11+ | Ecosistema maduro para IA local |
+| Lenguaje | Python 3.11 o 3.12 | Ecosistema maduro para IA local; ver nota de compatibilidad abajo |
 | Embeddings | `nomic-embed-text` (Ollama) | Local, gratuito, buen rendimiento en español |
 | Modelo generador | Llama 3.1 8B / Mistral 7B (Ollama) | Equilibrio calidad/recursos, sin GPU dedicada |
 | Base vectorial | ChromaDB | Embebida, sin servidor adicional |
@@ -89,12 +90,24 @@ hotel-recepcion-rag/
 │   │   ├── table_chunker.py    # directorios + inventarios (misma forma estructural)
 │   │   ├── procedure_chunker.py # procedimientos, por subsección, con metadata de modo
 │   │   └── pipeline.py         # load_documents(): punto de entrada público de la capa
-│   ├── embeddings/             # (siguiente) generación de vectores
-│   ├── retrieval/               # (siguiente) búsqueda y umbral de confianza
-│   ├── generation/              # (siguiente) prompts y llamada al modelo
-│   └── orchestration/           # (siguiente) decisión escalar/responder + citación
+│   ├── embeddings/
+│   │   ├── ollama_client.py     # wrapper sobre el cliente ollama (embeddings)
+│   │   └── indexer.py           # genera embeddings y sincroniza ChromaDB (idempotente, con poda)
+│   ├── retrieval/
+│   │   ├── search.py            # búsqueda en ChromaDB, distancia -> similitud
+│   │   ├── confidence.py        # decisión responder/escalar según umbral
+│   │   └── pipeline.py          # retrieve(): búsqueda + filtro de modo + confianza
+│   ├── generation/
+│   │   ├── prompts.py            # plantillas directo/explicado + instrucción de seguridad
+│   │   ├── ollama_generator.py   # wrapper sobre ollama.Client().chat()
+│   │   └── pipeline.py           # generate_answer(): filtra contexto, arma prompt, llama al modelo
+│   └── orchestration/
+│       ├── metrics.py            # registro CSV, feedback diferido por interaction_id, agregados
+│       └── pipeline.py           # ask(): el único punto de entrada que necesita la interfaz
 ├── interface/
-│   └── app.py                  # interfaz Streamlit
+│   └── app.py                  # chat (toggle directo/explicado, feedback) + panel de métricas
+├── scripts/
+│   └── reindex.py              # CLI: reconstruye el índice de ChromaDB desde docs/
 ├── metrics/
 │   ├── gap_log.csv             # preguntas escaladas sin respuesta
 │   └── feedback_log.csv        # valoraciones 👍/👎 del usuario
@@ -107,16 +120,25 @@ documentos de ejemplo ficticios que replican la estructura sin datos reales.
 
 ## Instalación
 
+> **Usa Python 3.11 o 3.12.** Este proyecto se desarrolló y testeó con
+> 3.12.3. Versiones muy nuevas (p. ej. 3.14) todavía no tienen wheels
+> precompilados para algunas dependencias transitivas de ChromaDB (en
+> particular `tokenizers`, que requiere compilar un componente en Rust/C), y
+> la instalación puede fallar con un error de compilación (`cc ... did not
+> execute successfully`). Si te pasa, recrea el venv con `python3.12` en vez
+> de `python3` a secas.
+
 ```bash
 # 1. Clonar y entrar al repo
 git clone <url-del-repo>
 cd hotel-recepcion-rag
 
-# 2. Entorno virtual
-python3 -m venv venv
+# 2. Entorno virtual (usa explícitamente 3.11 o 3.12, ver nota arriba)
+python3.12 -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 
 # 3. Dependencias
+pip install --upgrade pip
 pip install -r requirements.txt
 
 # 4. Ollama y modelos locales
@@ -124,9 +146,45 @@ pip install -r requirements.txt
 ollama pull nomic-embed-text
 ollama pull llama3.1:8b         # o: ollama pull mistral:7b
 
-# 5. Tests
+# 5. Tests (no requieren Ollama: usan mocks/fakes para esa parte)
 pytest
 ```
+
+## Indexado
+
+Una vez instalado Ollama y descargado `nomic-embed-text`, construir o
+reconstruir el índice de ChromaDB a partir de `docs/` es:
+
+```bash
+python scripts/reindex.py
+```
+
+Es seguro ejecutarlo cuantas veces haga falta: es idempotente (no duplica
+chunks ya indexados) y poda del índice cualquier chunk cuyo documento de
+origen haya cambiado o desaparecido — ver
+[`docs/decisiones/0005-indexado-idempotente-con-poda.md`](docs/decisiones/0005-indexado-idempotente-con-poda.md).
+
+Los tests de `tests/test_indexer.py` no requieren Ollama (usan un cliente de
+embeddings fake y ChromaDB en modo efímero). Los de
+`tests/test_ollama_client.py` tampoco: mockean la librería `ollama`. La única
+validación que sí requiere Ollama real corriendo en local es ejecutar
+`scripts/reindex.py` de principio a fin.
+
+## Uso
+
+Con el índice ya construido y Ollama corriendo con el modelo generador
+descargado (`ollama pull llama3.1:8b` o `mistral:7b`):
+
+```bash
+streamlit run interface/app.py
+```
+
+Si todavía no hay nada indexado, la app lo indica claramente en vez de
+fallar — no hace falta adivinar qué pasó. `tests/test_app.py` cubre ese
+arranque en frío, el flujo de chat y el feedback con
+[`streamlit.testing.v1.AppTest`](https://docs.streamlit.io/develop/api-reference/app-testing),
+sin necesitar Ollama ni navegador (ver
+[`docs/decisiones/0009-session-state-como-costura-de-tests.md`](docs/decisiones/0009-session-state-como-costura-de-tests.md)).
 
 ## Desarrollo
 
