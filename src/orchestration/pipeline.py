@@ -56,8 +56,8 @@ def ask(
     absoluto (ver arquitectura en README.md): se devuelve ESCALATION_MESSAGE
     directamente, ahorrando una llamada innecesaria a Ollama.
 
-    Si `history` se indica, se usa tanto para enriquecer la búsqueda (ADR
-    0010) como para que el modelo entienda preguntas de seguimiento. El
+    `history` se ignora: ni retrieval ni generation lo reciben, así que no
+    se usa para enriquecer la búsqueda ni para preguntas de seguimiento. El
     modelo puede responder con una pregunta de aclaración en vez de una
     respuesta final (ver ADR 0010); esa rama se registra como una categoría
     de resultado distinta, ni "respondida" ni "escalada".
@@ -65,18 +65,11 @@ def ask(
     if mode not in VALID_MODES:
         raise ValueError(f"mode debe ser uno de {VALID_MODES}, recibido: {mode!r}")
 
-    decision = retrieve(query, settings, embedding_client, collection, history=history)
+    decision = retrieve(query, settings, embedding_client, collection)
 
     is_clarification = False
     if decision.should_answer:
-        answer = generate_answer(
-            query,
-            mode,
-            decision,
-            generation_client,
-            history=history,
-            allow_clarification=settings.allow_clarification,
-        )
+        answer = generate_answer(query, mode, decision, generation_client, allow_clarification=settings.allow_clarification)
         text = answer.text
         sources = answer.sources
         is_clarification = answer.is_clarification

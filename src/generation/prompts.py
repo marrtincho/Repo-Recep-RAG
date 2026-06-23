@@ -36,16 +36,13 @@ _CORE_INSTRUCTION = (
 _SAFETY_INSTRUCTION = (
     "Responde SOLO con lo que diga el contexto. No añadas conocimiento general "
     "tuyo ni completes con lo que suele ser habitual en otros hoteles: si un "
-    "dato no está escrito en los extractos, no lo menciones. Por ejemplo, si "
-    "los extractos no dicen qué documentos pide el hotel, no inventes una "
-    "lista. Si el campo concreto que te piden aparece como \"no disponible\" "
-    "en el extracto, o simplemente no aparece, dilo así — nunca uses un dato "
-    "de un campo distinto (p. ej. un horario, una extensión de otro "
-    "departamento) como si fuera la respuesta al campo que falta. La fuente "
-    "que cites al final debe ser exactamente el nombre de archivo que "
-    "aparece en el extracto que usaste, copiado tal cual. Si NINGUNO de los "
-    "extractos trata sobre lo que se pregunta, entonces — y solo entonces — "
-    f'responde exactamente: "{ESCALATION_MESSAGE}"'
+    "dato no está escrito en los extractos, no lo menciones. NUNCA inventes "
+    "nombres de documentos ni cites fuentes que no aparezcan literalmente en "
+    "los extractos que recibes — si no ves el nombre del archivo en el contexto, "
+    "no lo pongas. La fuente que cites al final debe ser exactamente el nombre "
+    "de archivo que aparece en el extracto que usaste, copiado tal cual. Si "
+    "NINGUNO de los extractos trata sobre lo que se pregunta, entonces — y "
+    f'solo entonces — responde exactamente: "{ESCALATION_MESSAGE}"'
 )
 
 _CLARIFICATION_INSTRUCTION = (

@@ -15,7 +15,7 @@
 
 ### Procedimiento detallado
 
-1. Puede que el apellido o nombre se escriban de otra forma, que la reserva este a nombre de otra persona o empresa, o que simplemente se haya equivocado de hotel o de fecha al hacer la reserva. Los documentos pueden ser pasaporte, DNI o NIE, DNI de la UE o permiso de residencia.
+1. Puede que el apellido o nombre se escriban de otra forma, que la reserva este a nombre de otra persona o empresa, o que simplemente se haya equivocado de hotel o de fecha al hacer la reserva.
 2. Muchas veces la reserva ha sido dada de check in por diferentes motivos, se haya pasado de no show o se haya cancelado. La forma de saberlo es buscando en la lupa de la esquina superior derecha.
 3. El departamento de reservas es quien controla a la perfeccion el tema. Si tienes problemas para encontrar una reserva y ellos estan en el hotel, es mas facil y rapido llamarles, encontraran una solucion en segundos.
 4. Tenemos acceso a los correos de reservas en caso de que el departamento no este disponible. Toda la informacion de reservas esta a disposicion y podemos buscar informacion detallada en el buscador de cualquiera de los 3 correos electronicos.

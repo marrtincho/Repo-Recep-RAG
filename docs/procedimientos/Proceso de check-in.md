@@ -17,7 +17,7 @@
 
 ### Procedimiento detallado
 
-1. Tenemos que estar completamente seguros que se le esta dando la habitacion al huesped adecuado, los nombres se escriben de formas muy diferentes.
+1. Tenemos que estar completamente seguros que se le esta dando la habitacion al huesped adecuado, los nombres se escriben de formas muy diferentes. Los documentos válidos son: pasaporte, DNI o NIE, documento de identidad de la UE o permiso de residencia. Sin documentación de todos los huéspedes no se puede acceder al hotel.
 2. Seleccionamos el scanner que hemos usado (Derecho o izquierdo) y encontraremos el nombre del hesped al final del listado, al seleccionarlo se completa la mayoria de los campos del cardex, prestar atencion a cual no se completo antes de devolver el documento.
 3. Si la habitacion no estuviera asignada, asignar una limpia. Si no hubieran habitaciones limpias consultar con departamento de pisos (Gobernanta)
 4. Es de suma importancia coger los 16 numeros de la tarjeta correctamente, por si hubiera alguna incidencia. No se cobra ni bloquea nada de la tarjeta.

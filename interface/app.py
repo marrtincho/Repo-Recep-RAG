@@ -1,12 +1,12 @@
 """
 Interfaz Streamlit del asistente de recepción.
 
-Dos pestañas: "Consultas" (el chat, con toggle de modo y feedback 👍/👎) y
-"Métricas" (panel de impacto para la presentación a dirección).
+Paradigma de consulta única (no chat): el recepcionista escribe una
+pregunta, recibe la respuesta y da feedback. La siguiente pregunta empieza
+limpia, sin historial acumulado. Esto elimina la contaminación semántica
+entre preguntas de temas distintos y simplifica el modelo mental del usuario.
 
-Punto de entrada único hacia el backend: src.orchestration.pipeline.ask /
-submit_feedback. Esta capa no conoce los detalles de retrieval, embeddings
-ni generación — solo orquesta la UI.
+Dos pestañas: "Consulta" y "Métricas".
 
 Ejecutar con:  streamlit run interface/app.py
 """
@@ -19,7 +19,6 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-# Permitir importar el paquete src/ cuando Streamlit ejecuta este archivo directamente.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.config import load_settings  # noqa: E402
@@ -36,16 +35,13 @@ from src.orchestration.pipeline import ask, submit_feedback  # noqa: E402
 
 MODE_LABELS = {"directo": "Directo — solo la acción", "explicado": "Explicado — con el porqué"}
 
-# Costura de inyección de dependencias para tests con AppTest.
-#
-# AppTest.from_file() ejecuta este script en un namespace propio y aislado en
-# cada `.run()`: no reutiliza el módulo ya importado en el proceso de test,
-# así que `unittest.mock.patch("interface.app.X")` no llega a afectar lo que
-# AppTest realmente ejecuta. session_state sí es compartido (AppTest lo
-# soporta explícitamente para esto), así que es el punto de inyección que
-# usan los tests en tests/test_app.py para sustituir collection/ask/
-# submit_feedback sin tocar Ollama ni ChromaDB reales.
+# ── Costura de inyección para tests (AppTest ejecuta en namespace aislado) ────
 _UNSET = object()
+
+
+def _resolve_settings():
+    override = st.session_state.get("_test_settings_override", _UNSET)
+    return override if override is not _UNSET else _load_settings()
 
 
 def _resolve_collection(settings):
@@ -53,13 +49,6 @@ def _resolve_collection(settings):
     if override is not _UNSET:
         return override
     return _load_collection(str(settings.chroma_db_path))
-
-
-def _resolve_settings():
-    override = st.session_state.get("_test_settings_override", _UNSET)
-    if override is not _UNSET:
-        return override
-    return _load_settings()
 
 
 def _resolve_ask():
@@ -70,6 +59,8 @@ def _resolve_submit_feedback():
     return st.session_state.get("_test_submit_feedback_override", submit_feedback)
 
 
+# ── Recursos cacheados ────────────────────────────────────────────────────────
+
 @st.cache_resource
 def _load_settings():
     return load_settings()
@@ -77,93 +68,79 @@ def _load_settings():
 
 @st.cache_resource
 def _load_collection(chroma_db_path_str: str):
-    """Cachea la colección de ChromaDB. Devuelve None si todavía no existe un índice utilizable."""
-    settings = _load_settings()
     try:
-        collection = get_collection(settings.chroma_db_path)
-        if collection.count() == 0:
-            return None
-        return collection
+        collection = get_collection(_load_settings().chroma_db_path)
+        return collection if collection.count() > 0 else None
     except Exception:
         return None
 
 
 @st.cache_resource
 def _load_embedding_client():
-    settings = _load_settings()
-    return OllamaEmbeddingClient(model=settings.embedding_model, host=settings.ollama_host)
+    s = _load_settings()
+    return OllamaEmbeddingClient(model=s.embedding_model, host=s.ollama_host)
 
 
 @st.cache_resource
 def _load_generation_client():
-    settings = _load_settings()
+    s = _load_settings()
     return OllamaGenerationClient(
-        model=settings.generation_model,
-        host=settings.ollama_host,
-        temperature=settings.temperature,
-        max_tokens=settings.max_tokens,
+        model=s.generation_model,
+        host=s.ollama_host,
+        temperature=s.temperature,
+        max_tokens=s.max_tokens,
     )
 
+
+# ── Estado de la sesión ───────────────────────────────────────────────────────
 
 def _init_state() -> None:
-    if "messages" not in st.session_state:
-        st.session_state.messages = []  # lista de dicts: role, content, sources?, interaction_id?, escalated?, is_clarification?, feedback?
+    """
+    Una sola consulta en memoria: la pregunta actual y su resultado.
+    No hay historial acumulado — cada consulta es independiente.
+    """
+    for key, default in [
+        ("query", ""),
+        ("result", None),       # OrchestrationResult | None
+        ("feedback_given", None),
+        ("error", None),
+    ]:
+        if key not in st.session_state:
+            st.session_state[key] = default
 
 
-def _render_index_missing_notice() -> None:
-    st.warning(
-        "Todavía no hay documentación indexada. Para empezar, añade documentos en `docs/` "
-        "y ejecuta `python scripts/reindex.py` desde la raíz del proyecto. Luego recarga esta página."
-    )
+def _reset() -> None:
+    st.session_state.query = ""
+    st.session_state.result = None
+    st.session_state.feedback_given = None
+    st.session_state.error = None
 
 
-def _record_feedback(index: int, value: str) -> None:
-    """Callback de los botones de feedback: registra y marca el mensaje para no volver a preguntar."""
+def _record_feedback(value: str) -> None:
     settings = _resolve_settings()
-    message = st.session_state.messages[index]
+    result = st.session_state.result
+    if result is None:
+        return
     try:
-        _resolve_submit_feedback()(message["interaction_id"], value, settings)
-        message["feedback"] = value
+        _resolve_submit_feedback()(result.interaction_id, value, settings)
+        st.session_state.feedback_given = value
     except ValueError as exc:
-        st.session_state.feedback_error = str(exc)
+        st.session_state.error = str(exc)
 
 
-def _render_message(message: dict, index: int) -> None:
-    with st.chat_message(message["role"]):
-        st.markdown(message["content"])
+# ── Pestaña de consulta ───────────────────────────────────────────────────────
 
-        if message["role"] != "assistant":
-            return
-
-        if message.get("sources"):
-            st.caption("Fuentes: " + ", ".join(message["sources"]))
-
-        # Sin feedback para respuestas escaladas o preguntas de aclaración:
-        # no hay nada que evaluar como correcto/incorrecto todavía.
-        if message.get("escalated") or message.get("is_clarification"):
-            return
-
-        existing = message.get("feedback")
-        if existing == FEEDBACK_CORRECTO:
-            st.caption("Marcado como útil. Gracias.")
-        elif existing == FEEDBACK_INCORRECTO:
-            st.caption("Marcado como incorrecto. Se registrará para revisar la documentación.")
-        else:
-            col_yes, col_no, _ = st.columns([1, 1, 6])
-            col_yes.button("👍 Útil", key=f"fb_yes_{index}", on_click=_record_feedback, args=(index, FEEDBACK_CORRECTO))
-            col_no.button("👎 No me sirve", key=f"fb_no_{index}", on_click=_record_feedback, args=(index, FEEDBACK_INCORRECTO))
-
-
-def _render_chat_tab(collection) -> None:
+def _render_consulta_tab(collection) -> None:
     if collection is None:
-        _render_index_missing_notice()
+        st.warning(
+            "Todavía no hay documentación indexada. Añade documentos en `docs/` "
+            "y ejecuta `python scripts/reindex.py` desde la raíz del proyecto."
+        )
         return
 
     settings = _resolve_settings()
 
-    if "feedback_error" in st.session_state:
-        st.error(st.session_state.pop("feedback_error"))
-
+    # ── Toggle de modo ────────────────────────────────────────────────────────
     mode_keys = list(MODE_LABELS.keys())
     default_index = mode_keys.index(settings.mode_default) if settings.mode_default in mode_keys else 0
     mode_key = st.radio(
@@ -172,55 +149,93 @@ def _render_chat_tab(collection) -> None:
         format_func=lambda k: MODE_LABELS[k],
         index=default_index,
         horizontal=True,
+        label_visibility="collapsed",
     )
 
-    for index, message in enumerate(st.session_state.messages):
-        _render_message(message, index)
-
-    prompt = st.chat_input("Escribe tu consulta operativa…")
-    if not prompt:
-        return
-
-    # Historial previo a este turno (todo lo ya mostrado, antes de añadir el mensaje actual),
-    # usado tanto para enriquecer la búsqueda como para que el modelo entienda seguimientos (ADR 0010).
-    history = [(m["role"], m["content"]) for m in st.session_state.messages]
-
-    st.session_state.messages.append({"role": "user", "content": prompt})
-
-    embedding_client = _load_embedding_client()
-    generation_client = _load_generation_client()
-
-    try:
-        with st.spinner("Buscando en la documentación…"):
-            result = _resolve_ask()(
-                prompt, mode_key, settings, embedding_client, collection, generation_client, history=history
-            )
-    except Exception as exc:  # noqa: BLE001 — la UI debe degradar con gracia ante cualquier fallo del backend
-        st.session_state.messages.append(
-            {
-                "role": "assistant",
-                "content": (
-                    "No he podido procesar la consulta. Comprueba que Ollama esté en marcha "
-                    f"y vuelve a intentarlo.\n\nDetalle técnico: {exc}"
-                ),
-                "escalated": True,
-            }
+    # ── Campo de consulta ─────────────────────────────────────────────────────
+    with st.form("consulta_form", clear_on_submit=True):
+        query = st.text_input(
+            "Consulta",
+            placeholder="¿En qué puedo ayudarte?",
+            label_visibility="collapsed",
         )
-        st.rerun()
+        submitted = st.form_submit_button("Consultar", use_container_width=True)
+
+    if submitted and query.strip():
+        _reset()
+        st.session_state.query = query.strip()
+
+        embedding_client = _load_embedding_client()
+        generation_client = _load_generation_client()
+
+        try:
+            with st.spinner("Buscando en la documentación…"):
+                st.session_state.result = _resolve_ask()(
+                    st.session_state.query,
+                    mode_key,
+                    settings,
+                    embedding_client,
+                    collection,
+                    generation_client,
+                    history=None,   # sin historial: cada consulta es independiente
+                )
+        except Exception as exc:  # noqa: BLE001
+            st.session_state.error = str(exc)
+
+    # ── Resultado ─────────────────────────────────────────────────────────────
+    if st.session_state.error:
+        st.error(
+            "No he podido procesar la consulta. Comprueba que Ollama esté en marcha "
+            f"y vuelve a intentarlo.\n\nDetalle: {st.session_state.error}"
+        )
+
+    result = st.session_state.result
+    if result is None:
         return
 
-    st.session_state.messages.append(
-        {
-            "role": "assistant",
-            "content": result.text,
-            "sources": result.sources,
-            "interaction_id": result.interaction_id,
-            "escalated": result.was_escalated,
-            "is_clarification": result.is_clarification,
-        }
-    )
-    st.rerun()
+    st.divider()
 
+    # Pregunta en contexto
+    if st.session_state.query:
+        st.caption(f"**Consulta:** {st.session_state.query}")
+
+    # Respuesta
+    st.markdown(result.text)
+
+    # Fuentes
+    if result.sources:
+        st.caption("Fuente: " + ", ".join(result.sources))
+
+    # Feedback — no para escaladas
+    if not result.was_escalated and not result.is_clarification:
+        fb = st.session_state.feedback_given
+        if fb == FEEDBACK_CORRECTO:
+            st.success("Marcado como útil.", icon="👍")
+        elif fb == FEEDBACK_INCORRECTO:
+            st.warning("Marcado como incorrecto. Se revisará la documentación.", icon="👎")
+        else:
+            col_yes, col_no, _ = st.columns([1, 1, 5])
+            col_yes.button(
+                "👍 Útil",
+                on_click=_record_feedback,
+                args=(FEEDBACK_CORRECTO,),
+                use_container_width=True,
+            )
+            col_no.button(
+                "👎 No me sirve",
+                on_click=_record_feedback,
+                args=(FEEDBACK_INCORRECTO,),
+                use_container_width=True,
+            )
+
+    # Nueva consulta
+    st.divider()
+    if st.button("Nueva consulta", use_container_width=False):
+        _reset()
+        st.rerun()
+
+
+# ── Pestaña de métricas ───────────────────────────────────────────────────────
 
 def _render_metrics_tab() -> None:
     settings = _resolve_settings()
@@ -237,8 +252,8 @@ def _render_metrics_tab() -> None:
     col3.metric("Tasa de escalado", f"{metrics['tasa_escalado'] * 100:.0f}%")
     col4.metric("Tasa de acierto", f"{metrics['tasa_acierto'] * 100:.0f}%")
     st.caption(
-        "La tasa de acierto se calcula solo sobre las respuestas que alguien ha valorado con 👍/👎. "
-        "El resto cuentan como aún sin evaluar."
+        "La tasa de acierto se calcula solo sobre las respuestas valoradas con 👍/👎. "
+        "El resto cuentan como sin evaluar."
     )
 
     _render_gap_log(settings.gap_log_path)
@@ -247,7 +262,7 @@ def _render_metrics_tab() -> None:
 def _render_gap_log(gap_log_path: Path) -> None:
     st.subheader("Huecos de documentación detectados")
     if not gap_log_path.exists():
-        st.success("Ninguna consulta ha tenido que escalarse todavía. No hay huecos de documentación detectados.")
+        st.success("Ninguna consulta ha tenido que escalarse todavía.")
         return
 
     gap_df = pd.read_csv(gap_log_path, dtype=str, keep_default_na=False)
@@ -260,7 +275,6 @@ def _render_gap_log(gap_log_path: Path) -> None:
         "Son candidatas directas a nueva documentación."
     )
 
-    # Evolución semanal: cuántos huecos por semana ISO.
     timestamps = pd.to_datetime(gap_df["timestamp"], errors="coerce", utc=True)
     weekly = timestamps.dt.strftime("%Y-S%V").value_counts().sort_index()
     if not weekly.empty:
@@ -280,19 +294,25 @@ def _render_gap_log(gap_log_path: Path) -> None:
     )
 
 
+# ── Main ──────────────────────────────────────────────────────────────────────
+
 def main() -> None:
-    st.set_page_config(page_title="Asistente de recepción", page_icon="🛎️", layout="centered")
+    st.set_page_config(
+        page_title="Asistente de recepción",
+        page_icon="🛎️",
+        layout="centered",
+    )
     _init_state()
 
     st.title("🛎️ Asistente de recepción")
-    st.caption("Consulta procedimientos, contactos y ubicaciones a partir de la documentación interna del hotel.")
+    st.caption("Consulta la documentación interna del hotel en lenguaje natural.")
 
     settings = _resolve_settings()
     collection = _resolve_collection(settings)
 
-    chat_tab, metrics_tab = st.tabs(["Consultas", "Métricas"])
-    with chat_tab:
-        _render_chat_tab(collection)
+    consulta_tab, metrics_tab = st.tabs(["Consulta", "Métricas"])
+    with consulta_tab:
+        _render_consulta_tab(collection)
     with metrics_tab:
         _render_metrics_tab()
 
