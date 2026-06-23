@@ -15,9 +15,10 @@ REAL_CONFIG_PATH = REPO_ROOT / "config" / "settings.yaml"
 def test_load_real_settings_yaml_succeeds():
     """El settings.yaml versionado en el repo debe cargar sin errores."""
     settings = load_settings(REAL_CONFIG_PATH)
-    assert settings.embedding_model == "nomic-embed-text"
+    assert settings.embedding_model == "bge-m3"
     assert 0.0 <= settings.confidence_threshold <= 1.0
     assert settings.top_k > 0
+    assert settings.max_history_turns > 0
 
 
 def test_paths_are_resolved_relative_to_repo_root():
@@ -28,16 +29,16 @@ def test_paths_are_resolved_relative_to_repo_root():
     assert settings.chroma_db_path == REPO_ROOT / "data" / "chroma_db"
 
 
-def test_doc_type_paths_covers_all_three_document_types():
-    """El mapa doc_type_paths debe exponer las tres categorías documentales."""
+def test_doc_type_paths_covers_all_document_types():
+    """El mapa doc_type_paths debe exponer las cuatro categorías documentales."""
     settings = load_settings(REAL_CONFIG_PATH)
-    assert set(settings.doc_type_paths) == {"procedimientos", "directorios", "inventarios"}
+    assert set(settings.doc_type_paths) == {"procedimientos", "directorios", "inventarios", "referencias"}
 
 
 def test_chunking_profiles_loaded_for_each_doc_type():
     """Cada tipo de documento debe tener su propio perfil de chunking."""
     settings = load_settings(REAL_CONFIG_PATH)
-    for doc_type in ("procedimientos", "directorios", "inventarios"):
+    for doc_type in ("procedimientos", "directorios", "inventarios", "referencias"):
         profile = settings.chunking[doc_type]
         assert profile.chunk_size > 0
         assert profile.chunk_overlap >= 0
@@ -69,6 +70,7 @@ paths:
   procedimientos: docs/procedimientos/
   directorios: docs/directorios/
   inventarios: docs/inventarios/
+  referencias: docs/referencias/
   chroma_db: data/chroma_db/
   gap_log: metrics/gap_log.csv
   feedback_log: metrics/feedback_log.csv
@@ -76,12 +78,15 @@ chunking:
   procedimientos: {chunk_size: 500, chunk_overlap: 50, strategy: by_section}
   directorios: {chunk_size: 200, chunk_overlap: 0, strategy: by_entry}
   inventarios: {chunk_size: 200, chunk_overlap: 0, strategy: by_entry}
+  referencias: {chunk_size: 550, chunk_overlap: 0, strategy: by_entry}
 retrieval:
   confidence_threshold: 0.65
   top_k: 3
 generation:
   temperature: 0.2
   max_tokens: 512
+conversation:
+  max_history_turns: 3
 logging:
   level: INFO
   log_file: metrics/interactions.log

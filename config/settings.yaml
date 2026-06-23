@@ -6,8 +6,8 @@
 # =============================================================================
 
 models:
-  embedding: "nomic-embed-text"
-  generation: "llama3.1:8b"        # alternativa equivalente: "mistral:7b"
+  embedding: "bge-m3"
+  generation: "llama3.1:8b"        # alternativa equivalente: "mistral:7b, llama3.1:8b, gemma4:e4b"
   ollama_host: "http://localhost:11434"
 
 paths:
@@ -15,6 +15,7 @@ paths:
   procedimientos: "docs/procedimientos/"
   directorios: "docs/directorios/"
   inventarios: "docs/inventarios/"
+  referencias: "docs/referencias/"
   chroma_db: "data/chroma_db/"
   gap_log: "metrics/gap_log.csv"
   feedback_log: "metrics/feedback_log.csv"
@@ -28,16 +29,23 @@ chunking:
     chunk_overlap: 50
     strategy: "by_section"
   directorios:
-    chunk_size: 200
+    chunk_size: 300               # ~240c (fila real con prefijo de tema) + margen (ADR 0016)
     chunk_overlap: 0
     strategy: "by_entry"
   inventarios:
-    chunk_size: 200
+    chunk_size: 300               # mismo criterio que directorios
+    chunk_overlap: 0
+    strategy: "by_entry"
+  referencias:
+    chunk_size: 550               # 450 (fila real ~370c) + margen para el prefijo de tema "[Documento]" (ADR 0016)
     chunk_overlap: 0
     strategy: "by_entry"
 
 retrieval:
-  confidence_threshold: 0.65   # provisional — se recalibra en semana 3 con la batería de prueba
+  confidence_threshold: 0.50   # bajado de 0.52: preguntas reales con frases coloquiales (no la
+                              # redacción exacta del documento) caían en 0.51-0.52 y escalaban
+                              # de más. El solape con "sin respuesta" (hasta ~0.60) sigue ahí,
+                              # por eso el prompt mantiene una 2a capa de escalado tras esto.
   top_k: 3
 
 generation:
@@ -45,6 +53,12 @@ generation:
   temperature: 0.2
   max_tokens: 512
 
+conversation:
+  max_history_turns: 2
+  allow_clarification: false   # si el modelo puede pedir aclaraciones. Desactivado por defecto:
+                               # modelos pequeños tienden a pedir datos que no necesitan y entran en
+                               # bucle. Con false, siempre responde con lo que tiene o escala.
+  
 logging:
   level: "INFO"
   log_file: "metrics/interactions.log"

@@ -48,6 +48,7 @@ class Settings:
     procedimientos_path: Path
     directorios_path: Path
     inventarios_path: Path
+    referencias_path: Path
     chroma_db_path: Path
     gap_log_path: Path
     feedback_log_path: Path
@@ -64,6 +65,10 @@ class Settings:
     temperature: float
     max_tokens: int
 
+    # conversation
+    max_history_turns: int
+    allow_clarification: bool
+
     # logging
     log_level: str
     log_file: Path
@@ -75,6 +80,7 @@ class Settings:
             "procedimientos": self.procedimientos_path,
             "directorios": self.directorios_path,
             "inventarios": self.inventarios_path,
+            "referencias": self.referencias_path,
         }
 
 
@@ -134,6 +140,7 @@ def load_settings(config_path: Path | str = DEFAULT_CONFIG_PATH) -> Settings:
         procedimientos_path=_resolve(_require(raw, "paths", "procedimientos")),
         directorios_path=_resolve(_require(raw, "paths", "directorios")),
         inventarios_path=_resolve(_require(raw, "paths", "inventarios")),
+        referencias_path=_resolve(_require(raw, "paths", "referencias")),
         chroma_db_path=_resolve(_require(raw, "paths", "chroma_db")),
         gap_log_path=_resolve(_require(raw, "paths", "gap_log")),
         feedback_log_path=_resolve(_require(raw, "paths", "feedback_log")),
@@ -143,6 +150,8 @@ def load_settings(config_path: Path | str = DEFAULT_CONFIG_PATH) -> Settings:
         mode_default=_require(raw, "generation", "mode_default"),
         temperature=float(_require(raw, "generation", "temperature")),
         max_tokens=int(_require(raw, "generation", "max_tokens")),
+        max_history_turns=int(_require(raw, "conversation", "max_history_turns")),
+        allow_clarification=bool(raw.get("conversation", {}).get("allow_clarification", False)),
         log_level=_require(raw, "logging", "level"),
         log_file=_resolve(_require(raw, "logging", "log_file")),
     )
