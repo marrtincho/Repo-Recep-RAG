@@ -28,11 +28,11 @@ class TestLoadDocumentsIntegration:
         assert isinstance(chunks, list)
         assert all(isinstance(c, Chunk) for c in chunks)
 
-    def test_all_three_doc_types_represented(self):
+    def test_all_doc_types_represented(self):
         settings = load_settings()
         chunks = load_documents(settings)
         doc_types_found = {c.doc_type for c in chunks}
-        assert doc_types_found == {"procedimientos", "directorios", "inventarios"}
+        assert doc_types_found == {"procedimientos", "directorios", "inventarios", "referencias"}
 
     def test_chunk_ids_globally_unique_across_whole_corpus(self):
         """Los IDs deben ser únicos no solo dentro de un documento, sino en todo el corpus indexado."""

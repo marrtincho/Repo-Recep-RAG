@@ -35,7 +35,7 @@ class TestChunkTableDocumentSynthetic:
     def test_section_with_no_table_falls_back_to_bullets(self):
         text = "# Doc\n## Notas\n- Primera nota\n- Segunda nota\n"
         chunks = chunk_table_document(text, "inventarios", Path("doc.md"), chunk_size=200, chunk_overlap=0)
-        assert [c.text for c in chunks] == ["Primera nota", "Segunda nota"]
+        assert [c.text for c in chunks] == ["[Doc] Primera nota", "[Doc] Segunda nota"]
         assert all(c.metadata["tipo_entrada"] == "nota" for c in chunks)
 
     def test_fully_empty_table_produces_zero_chunks(self):
@@ -82,7 +82,9 @@ class TestChunkTableDocumentRealFixtures:
     def test_directorio_contactos_produces_expected_chunks(self):
         path = FIXTURES / "directorios" / "directorio_contactos_hotel.md"
         text = path.read_text(encoding="utf-8")
-        chunks = chunk_table_document(text, "directorios", path, chunk_size=200, chunk_overlap=0)
+        # chunk_size=300: valor real de config/settings.yaml para "directorios" (ADR 0016),
+        # necesario para que la fila con prefijo de tema no se divida en dos piezas.
+        chunks = chunk_table_document(text, "directorios", path, chunk_size=300, chunk_overlap=0)
 
         # Solo hay 2 filas de tabla con datos reales (Dirección, Emergencias generales)
         # más 3 viñetas de la sección de notas de mantenimiento = 5 chunks
