@@ -102,7 +102,8 @@ def chunk_procedure_document(
 
             pieces = split_with_overlap(body, chunk_size=chunk_size, chunk_overlap=chunk_overlap)
             for piece_index, piece in enumerate(pieces):
-                chunk_text = f"{block.title} — {subsection.title}\n{piece}"
+                topic = f"{metadata_block['categoria']} · {block.title}"
+                chunk_text = f"[{topic}] {subsection.title}\n{piece}"
                 chunks.append(
                     Chunk(
                         text=chunk_text,

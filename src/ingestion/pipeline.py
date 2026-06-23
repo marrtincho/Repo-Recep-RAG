@@ -19,7 +19,7 @@ from src.ingestion.table_chunker import chunk_table_document
 
 logger = logging.getLogger(__name__)
 
-TABLE_DOC_TYPES = {"directorios", "inventarios"}
+TABLE_DOC_TYPES = {"directorios", "inventarios", "referencias"}
 PROCEDURE_DOC_TYPES = {"procedimientos"}
 
 
