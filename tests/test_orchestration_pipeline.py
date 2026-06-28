@@ -17,13 +17,14 @@ def _add(collection, chunk_id: str, text: str, vector: list[float], metadata: di
 
 @pytest.fixture
 def settings(tmp_path):
-    """Settings reales, pero con los logs de métricas redirigidos a tmp_path para no tocar metrics/ del repo."""
+    """Settings reales, pero con los logs de métricas y el caché redirigidos a tmp_path."""
     base = load_settings()
     return base.__class__(
         **{
             **base.__dict__,
             "feedback_log_path": tmp_path / "feedback_log.csv",
             "gap_log_path": tmp_path / "gap_log.csv",
+            "semantic_cache_path": tmp_path / "answer_cache.json",
         }
     )
 

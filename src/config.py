@@ -10,6 +10,7 @@ tocar lógica de negocio.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -73,6 +74,10 @@ class Settings:
     log_level: str
     log_file: Path
 
+    # semantic cache
+    semantic_cache_path: Path
+    semantic_cache_similarity_threshold: float
+
     @property
     def doc_type_paths(self) -> dict[str, Path]:
         """Mapa tipo de documento -> carpeta fuente. Usado por el pipeline de ingesta."""
@@ -94,6 +99,28 @@ def _require(data: dict[str, Any], *keys: str) -> Any:
             raise ConfigError(f"Falta la clave '{'.'.join(seen)}' en settings.yaml")
         node = node[key]
     return node
+
+
+def configure_logging(settings: Settings) -> None:
+    """
+    Inicializa el root logger con el nivel y archivo definidos en settings.yaml.
+
+    El guard `if logging.root.handlers` evita añadir handlers duplicados cuando
+    Streamlit re-ejecuta main() en cada interacción, o cuando pytest ya configuró
+    el logger antes de que se llame aquí.
+    """
+    if logging.root.handlers:
+        return
+    log_level = getattr(logging, settings.log_level.upper(), logging.INFO)
+    settings.log_file.parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        level=log_level,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+        handlers=[
+            logging.FileHandler(settings.log_file, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
+    )
 
 
 def load_settings(config_path: Path | str = DEFAULT_CONFIG_PATH) -> Settings:
@@ -154,4 +181,6 @@ def load_settings(config_path: Path | str = DEFAULT_CONFIG_PATH) -> Settings:
         allow_clarification=bool(raw.get("conversation", {}).get("allow_clarification", False)),
         log_level=_require(raw, "logging", "level"),
         log_file=_resolve(_require(raw, "logging", "log_file")),
+        semantic_cache_path=_resolve(_require(raw, "semantic_cache", "path")),
+        semantic_cache_similarity_threshold=float(_require(raw, "semantic_cache", "similarity_threshold")),
     )

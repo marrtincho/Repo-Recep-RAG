@@ -8,6 +8,7 @@ de un prototipo de uso interno, no hace falta una base de datos.
 
 from __future__ import annotations
 
+import csv
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,6 +23,7 @@ FEEDBACK_LOG_COLUMNS = [
     "confianza",
     "documentos_fuente",
     "modo",
+    "cache_id",
     "feedback",
 ]
 GAP_LOG_COLUMNS = ["timestamp", "pregunta", "modo", "confianza_mejor_resultado"]
@@ -46,6 +48,16 @@ def _write(path: Path, df: pd.DataFrame) -> None:
     df.to_csv(path, index=False)
 
 
+def _append_row(path: Path, row: dict, columns: list[str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_header = not path.exists()
+    with open(path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=columns)
+        if write_header:
+            writer.writeheader()
+        writer.writerow(row)
+
+
 def log_interaction(
     feedback_log_path: Path,
     gap_log_path: Path,
@@ -54,6 +66,7 @@ def log_interaction(
     confianza: float,
     documentos_fuente: list[str],
     modo: str,
+    cache_id: str | None = None,
 ) -> str:
     """
     Registra una interacción en feedback_log.csv y, si fue escalada, también en gap_log.csv.
@@ -68,49 +81,49 @@ def log_interaction(
     interaction_id = str(uuid.uuid4())
     timestamp = datetime.now(timezone.utc).isoformat()
 
-    df = _read_or_create(feedback_log_path, FEEDBACK_LOG_COLUMNS)
-    new_row = pd.DataFrame(
-        [
-            {
-                "interaction_id": interaction_id,
-                "timestamp": timestamp,
-                "pregunta": pregunta,
-                "resultado": resultado,
-                "confianza": f"{confianza:.4f}",
-                "documentos_fuente": ";".join(documentos_fuente),
-                "modo": modo,
-                "feedback": FEEDBACK_SIN_EVALUAR,
-            }
-        ]
+    _append_row(
+        feedback_log_path,
+        {
+            "interaction_id": interaction_id,
+            "timestamp": timestamp,
+            "pregunta": pregunta,
+            "resultado": resultado,
+            "confianza": f"{confianza:.4f}",
+            "documentos_fuente": ";".join(documentos_fuente),
+            "modo": modo,
+            "cache_id": cache_id or "",
+            "feedback": FEEDBACK_SIN_EVALUAR,
+        },
+        FEEDBACK_LOG_COLUMNS,
     )
-    df = pd.concat([df, new_row], ignore_index=True)
-    _write(feedback_log_path, df)
 
     if resultado == RESULTADO_ESCALADA:
-        gap_df = _read_or_create(gap_log_path, GAP_LOG_COLUMNS)
-        gap_row = pd.DataFrame(
-            [
-                {
-                    "timestamp": timestamp,
-                    "pregunta": pregunta,
-                    "modo": modo,
-                    "confianza_mejor_resultado": f"{confianza:.4f}",
-                }
-            ]
+        _append_row(
+            gap_log_path,
+            {
+                "timestamp": timestamp,
+                "pregunta": pregunta,
+                "modo": modo,
+                "confianza_mejor_resultado": f"{confianza:.4f}",
+            },
+            GAP_LOG_COLUMNS,
         )
-        gap_df = pd.concat([gap_df, gap_row], ignore_index=True)
-        _write(gap_log_path, gap_df)
 
     return interaction_id
 
 
-def record_feedback(feedback_log_path: Path, interaction_id: str, feedback: str) -> None:
+def record_feedback(feedback_log_path: Path, interaction_id: str, feedback: str) -> str | None:
     """
     Actualiza el campo feedback de una interacción ya registrada (👍/👎 desde la interfaz).
 
     Lanza ValueError si el interaction_id no existe — más seguro que fallar
     en silencio si la interfaz manda un id incorrecto o de un log ya rotado
     (ver docs/decisiones/0008).
+
+    Returns:
+        El cache_id asociado a la interacción, o None si no tiene entrada de caché.
+        Lo usa submit_feedback() en orchestration/pipeline.py para actualizar el
+        caché semántico con el feedback del usuario.
     """
     if feedback not in (FEEDBACK_CORRECTO, FEEDBACK_INCORRECTO):
         raise ValueError(f"feedback debe ser '{FEEDBACK_CORRECTO}' o '{FEEDBACK_INCORRECTO}', recibido: {feedback!r}")
@@ -120,8 +133,10 @@ def record_feedback(feedback_log_path: Path, interaction_id: str, feedback: str)
     if not mask.any():
         raise ValueError(f"No se encontró ninguna interacción con id {interaction_id!r} en {feedback_log_path}")
 
+    cache_id = df.loc[mask, "cache_id"].iloc[0] if "cache_id" in df.columns else ""
     df.loc[mask, "feedback"] = feedback
     _write(feedback_log_path, df)
+    return cache_id or None
 
 
 def compute_summary_metrics(feedback_log_path: Path) -> dict[str, float | int]:
@@ -156,3 +171,38 @@ def compute_summary_metrics(feedback_log_path: Path) -> dict[str, float | int]:
         "tasa_aclaracion": aclaraciones / total,
         "tasa_acierto": (aciertos / len(evaluadas)) if len(evaluadas) > 0 else 0.0,
     }
+
+
+def get_frequent_questions(
+    feedback_log_path: Path,
+    top_n: int = 5,
+    min_count: int = 2,
+) -> list[str]:
+    """
+    Devuelve las preguntas respondidas más frecuentes del log.
+
+    Solo incluye preguntas con resultado "respondida" (no escaladas ni
+    aclaraciones) y que hayan aparecido al menos `min_count` veces — evita
+    mostrar como "frecuente" algo que solo preguntó una persona una vez.
+    Las preguntas se normalizan a minúsculas para que "Cómo cargo parking"
+    y "como cargo parking" cuenten como la misma.
+
+    Devuelve lista vacía si no hay suficientes datos: la UI simplemente no
+    muestra la sección en ese caso.
+    """
+    df = _read_or_create(feedback_log_path, FEEDBACK_LOG_COLUMNS)
+    if df.empty:
+        return []
+
+    respondidas = df[df["resultado"] == RESULTADO_RESPONDIDA]["pregunta"]
+    if respondidas.empty:
+        return []
+
+    counts = respondidas.str.lower().str.strip().value_counts()
+    frecuentes = counts[counts >= min_count].head(top_n)
+
+    # Texto original (no normalizado) de la primera aparición de cada pregunta frecuente.
+    respondidas_df = df[df["resultado"] == RESULTADO_RESPONDIDA].copy()
+    respondidas_df["_norm"] = respondidas_df["pregunta"].str.lower().str.strip()
+    first_text = respondidas_df.drop_duplicates("_norm").set_index("_norm")["pregunta"]
+    return [first_text[norm].strip() for norm in frecuentes.index if norm in first_text]

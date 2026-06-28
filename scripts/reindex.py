@@ -11,19 +11,18 @@ Requiere Ollama corriendo localmente con el modelo de embeddings descargado
 
 from __future__ import annotations
 
-import logging
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.config import load_settings  # noqa: E402
+from src.config import configure_logging, load_settings  # noqa: E402
 from src.embeddings.indexer import index_documents  # noqa: E402
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     settings = load_settings()
+    configure_logging(settings)
     result = index_documents(settings)
     print(
         f"Indexado completo: {result['upserted']} chunks actualizados, "

@@ -38,6 +38,7 @@ def retrieve(
     embedding_client: EmbeddingClient,
     collection,
     history: list[tuple[str, str]] | None = None,
+    precomputed_embedding: list[float] | None = None,
 ) -> RetrievalDecision:
     """
     Busca `query` en `collection` y decide si hay confianza suficiente para responder.
@@ -65,5 +66,6 @@ def retrieve(
         collection=collection,
         top_k=settings.top_k,
         where=where,
+        precomputed_embedding=precomputed_embedding,
     )
     return evaluate(results, confidence_threshold=settings.confidence_threshold)

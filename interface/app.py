@@ -1,18 +1,16 @@
 """
 Interfaz Streamlit del asistente de recepción.
 
-Paradigma de consulta única (no chat): el recepcionista escribe una
-pregunta, recibe la respuesta y da feedback. La siguiente pregunta empieza
-limpia, sin historial acumulado. Esto elimina la contaminación semántica
-entre preguntas de temas distintos y simplifica el modelo mental del usuario.
-
-Dos pestañas: "Consulta" y "Métricas".
+Paradigma de consulta única (no chat): campo de texto, respuesta, feedback.
+Cada consulta es independiente — sin historial acumulado.
 
 Ejecutar con:  streamlit run interface/app.py
 """
 
 from __future__ import annotations
 
+import base64
+import html
 import sys
 from pathlib import Path
 
@@ -21,8 +19,8 @@ import streamlit as st
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from src.config import load_settings  # noqa: E402
-from src.embeddings.indexer import get_collection  # noqa: E402
+from src.config import configure_logging, load_settings  # noqa: E402
+from src.embeddings.indexer import get_collection, index_documents  # noqa: E402
 from src.embeddings.ollama_client import OllamaEmbeddingClient  # noqa: E402
 from src.generation.ollama_generator import OllamaGenerationClient  # noqa: E402
 from src.orchestration.metrics import (  # noqa: E402
@@ -30,14 +28,16 @@ from src.orchestration.metrics import (  # noqa: E402
     FEEDBACK_INCORRECTO,
     GAP_LOG_COLUMNS,
     compute_summary_metrics,
+    get_frequent_questions,
 )
 from src.orchestration.pipeline import ask, submit_feedback  # noqa: E402
 
 MODE_LABELS = {"directo": "Directo — solo la acción", "explicado": "Explicado — con el porqué"}
 
-# ── Costura de inyección para tests (AppTest ejecuta en namespace aislado) ────
 _UNSET = object()
 
+
+# ── Costura de inyección para tests ──────────────────────────────────────────
 
 def _resolve_settings():
     override = st.session_state.get("_test_settings_override", _UNSET)
@@ -69,7 +69,7 @@ def _load_settings():
 @st.cache_resource
 def _load_collection(chroma_db_path_str: str):
     try:
-        collection = get_collection(_load_settings().chroma_db_path)
+        collection = get_collection(Path(chroma_db_path_str))
         return collection if collection.count() > 0 else None
     except Exception:
         return None
@@ -92,18 +92,161 @@ def _load_generation_client():
     )
 
 
-# ── Estado de la sesión ───────────────────────────────────────────────────────
+@st.cache_data(ttl=300)
+def _get_frequent_questions(feedback_log_path_str: str, top_n: int = 5) -> list[str]:
+    return get_frequent_questions(Path(feedback_log_path_str), top_n=top_n, min_count=2)
+
+
+@st.cache_data
+def _get_logo_b64() -> str | None:
+    logo_path = Path(__file__).parent / "logo.png"
+    if not logo_path.exists():
+        return None
+    return base64.b64encode(logo_path.read_bytes()).decode()
+
+
+# ── Estilos ───────────────────────────────────────────────────────────────────
+
+def _inject_css() -> None:
+    st.markdown("""
+    <style>
+    /* Ocultar chrome genérico de Streamlit */
+    #MainMenu, footer, header { visibility: hidden; }
+    .stDeployButton { display: none; }
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    /* Header */
+    .sh-header {
+        background-color: #1a1a2e;
+        padding: 1.2rem 2rem;
+        margin: -4rem -4rem 2rem -4rem;
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }
+    .sh-header img { height: 48px; width: auto; }
+    .sh-header-text h1 {
+        color: #ffffff;
+        font-size: 1.25rem;
+        font-weight: 600;
+        margin: 0;
+        letter-spacing: 0.02em;
+    }
+    .sh-header-text p {
+        color: #a0a8c0;
+        font-size: 0.8rem;
+        margin: 0;
+        letter-spacing: 0.03em;
+    }
+
+    /* Contenido */
+    .block-container {
+        padding-top: 1rem !important;
+        max-width: 780px;
+    }
+
+    /* Botón de consultar */
+    .stFormSubmitButton > button {
+        background-color: #1a1a2e !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 6px !important;
+        font-weight: 500 !important;
+        letter-spacing: 0.03em !important;
+        transition: opacity 0.15s;
+    }
+    .stFormSubmitButton > button:hover { opacity: 0.85 !important; }
+
+    /* Botones secundarios (feedback, sugerencias, nueva consulta) */
+    .stButton > button {
+        border-radius: 6px !important;
+        border: 1px solid #dde1ea !important;
+        font-size: 0.85rem !important;
+        color: #3a3f52 !important;
+        background: #f8f9fc !important;
+        transition: background 0.15s;
+    }
+    .stButton > button:hover {
+        background: #eef0f8 !important;
+        border-color: #b0b8d0 !important;
+    }
+
+    /* Campo de texto */
+    .stTextInput > div > div > input {
+        border-radius: 6px !important;
+        border: 1px solid #dde1ea !important;
+        font-size: 1rem !important;
+        padding: 0.6rem 0.9rem !important;
+    }
+    .stTextInput > div > div > input:focus {
+        border-color: #1a1a2e !important;
+        box-shadow: 0 0 0 2px rgba(26,26,46,0.12) !important;
+    }
+
+    /* Bloque de respuesta */
+    .sh-respuesta {
+        background: #f8f9fc;
+        border-left: 3px solid #1a1a2e;
+        border-radius: 0 6px 6px 0;
+        padding: 1rem 1.2rem;
+        margin: 0.5rem 0 0.75rem 0;
+        color: #1a1f33;
+        line-height: 1.6;
+    }
+
+    /* Fuente */
+    .sh-fuente {
+        font-size: 0.75rem;
+        color: #8892a4;
+        margin-bottom: 0.75rem;
+    }
+
+    /* Label de frecuentes */
+    .sh-frecuentes-label {
+        font-size: 0.72rem;
+        color: #8892a4;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        margin-bottom: 0.3rem;
+    }
+
+    /* Métricas */
+    [data-testid="metric-container"] {
+        background: #f8f9fc;
+        border: 1px solid #eaecf2;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+
+def _render_header() -> None:
+    logo_b64 = _get_logo_b64()
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" alt="Singular Hotel">' if logo_b64 else ""
+    st.markdown(f"""
+    <div class="sh-header">
+        {logo_html}
+        <div class="sh-header-text">
+            <h1>Asistente de recepción</h1>
+            <p>Singular Hotel · Consulta interna de procedimientos</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ── Estado ────────────────────────────────────────────────────────────────────
 
 def _init_state() -> None:
-    """
-    Una sola consulta en memoria: la pregunta actual y su resultado.
-    No hay historial acumulado — cada consulta es independiente.
-    """
     for key, default in [
         ("query", ""),
-        ("result", None),       # OrchestrationResult | None
+        ("result", None),
         ("feedback_given", None),
         ("error", None),
+        ("suggested_query", None),
     ]:
         if key not in st.session_state:
             st.session_state[key] = default
@@ -114,6 +257,7 @@ def _reset() -> None:
     st.session_state.result = None
     st.session_state.feedback_given = None
     st.session_state.error = None
+    st.session_state.suggested_query = None
 
 
 def _record_feedback(value: str) -> None:
@@ -128,9 +272,14 @@ def _record_feedback(value: str) -> None:
         st.session_state.error = str(exc)
 
 
+def _launch_suggestion(pregunta: str) -> None:
+    _reset()
+    st.session_state.suggested_query = pregunta
+
+
 # ── Pestaña de consulta ───────────────────────────────────────────────────────
 
-def _render_consulta_tab(collection) -> None:
+def _render_consulta_tab(collection, settings) -> None:
     if collection is None:
         st.warning(
             "Todavía no hay documentación indexada. Añade documentos en `docs/` "
@@ -138,21 +287,22 @@ def _render_consulta_tab(collection) -> None:
         )
         return
 
-    settings = _resolve_settings()
+    # Consultas frecuentes
+    frecuentes = _get_frequent_questions(str(settings.feedback_log_path))
+    if frecuentes:
+        st.markdown('<p class="sh-frecuentes-label">Consultas frecuentes</p>', unsafe_allow_html=True)
+        cols = st.columns(len(frecuentes))
+        for col, pregunta in zip(cols, frecuentes):
+            col.button(
+                pregunta,
+                key=f"sug_{pregunta[:30]}",
+                on_click=_launch_suggestion,
+                args=(pregunta,),
+                use_container_width=True,
+            )
+        st.write("")
 
-    # ── Toggle de modo ────────────────────────────────────────────────────────
-    mode_keys = list(MODE_LABELS.keys())
-    default_index = mode_keys.index(settings.mode_default) if settings.mode_default in mode_keys else 0
-    mode_key = st.radio(
-        "Modo de respuesta",
-        options=mode_keys,
-        format_func=lambda k: MODE_LABELS[k],
-        index=default_index,
-        horizontal=True,
-        label_visibility="collapsed",
-    )
-
-    # ── Campo de consulta ─────────────────────────────────────────────────────
+    # Campo de consulta
     with st.form("consulta_form", clear_on_submit=True):
         query = st.text_input(
             "Consulta",
@@ -161,13 +311,29 @@ def _render_consulta_tab(collection) -> None:
         )
         submitted = st.form_submit_button("Consultar", use_container_width=True)
 
+    # Toggle de modo — debajo del campo para que el flujo sea natural
+    mode_keys = list(MODE_LABELS.keys())
+    default_index = mode_keys.index(settings.mode_default) if settings.mode_default in mode_keys else 0
+    mode_key = st.radio(
+        "Modo de respuesta",
+        options=mode_keys,
+        format_func=lambda k: MODE_LABELS[k],
+        index=default_index,
+        horizontal=True,
+    )
+
     if submitted and query.strip():
         _reset()
         st.session_state.query = query.strip()
 
+    if st.session_state.suggested_query:
+        st.session_state.query = st.session_state.suggested_query
+        st.session_state.suggested_query = None
+
+    # Ejecutar la consulta (formulario o sugerencia)
+    if st.session_state.query and st.session_state.result is None and not st.session_state.error:
         embedding_client = _load_embedding_client()
         generation_client = _load_generation_client()
-
         try:
             with st.spinner("Buscando en la documentación…"):
                 st.session_state.result = _resolve_ask()(
@@ -177,36 +343,45 @@ def _render_consulta_tab(collection) -> None:
                     embedding_client,
                     collection,
                     generation_client,
-                    history=None,   # sin historial: cada consulta es independiente
+                    history=None,
+                    use_cache=st.session_state.get("cache_enabled", True),
                 )
         except Exception as exc:  # noqa: BLE001
             st.session_state.error = str(exc)
 
-    # ── Resultado ─────────────────────────────────────────────────────────────
+    # Error
     if st.session_state.error:
         st.error(
             "No he podido procesar la consulta. Comprueba que Ollama esté en marcha "
             f"y vuelve a intentarlo.\n\nDetalle: {st.session_state.error}"
         )
 
+    # Resultado
     result = st.session_state.result
     if result is None:
         return
 
     st.divider()
 
-    # Pregunta en contexto
     if st.session_state.query:
         st.caption(f"**Consulta:** {st.session_state.query}")
 
-    # Respuesta
-    st.markdown(result.text)
+    # Respuesta en bloque con estilo
+    st.markdown(
+        f'<div class="sh-respuesta">{html.escape(result.text)}</div>',
+        unsafe_allow_html=True,
+    )
 
-    # Fuentes
     if result.sources:
-        st.caption("Fuente: " + ", ".join(result.sources))
+        st.markdown(
+            f'<p class="sh-fuente">📄 {", ".join(result.sources)}</p>',
+            unsafe_allow_html=True,
+        )
 
-    # Feedback — no para escaladas
+    if result.was_cached:
+        st.caption("⚡ Respuesta desde caché validada")
+
+    # Feedback
     if not result.was_escalated and not result.is_clarification:
         fb = st.session_state.feedback_given
         if fb == FEEDBACK_CORRECTO:
@@ -215,48 +390,57 @@ def _render_consulta_tab(collection) -> None:
             st.warning("Marcado como incorrecto. Se revisará la documentación.", icon="👎")
         else:
             col_yes, col_no, _ = st.columns([1, 1, 5])
-            col_yes.button(
-                "👍 Útil",
-                on_click=_record_feedback,
-                args=(FEEDBACK_CORRECTO,),
-                use_container_width=True,
-            )
-            col_no.button(
-                "👎 No me sirve",
-                on_click=_record_feedback,
-                args=(FEEDBACK_INCORRECTO,),
-                use_container_width=True,
-            )
+            col_yes.button("👍 Útil", on_click=_record_feedback, args=(FEEDBACK_CORRECTO,), use_container_width=True)
+            col_no.button("👎 No me sirve", on_click=_record_feedback, args=(FEEDBACK_INCORRECTO,), use_container_width=True)
 
-    # Nueva consulta
     st.divider()
-    if st.button("Nueva consulta", use_container_width=False):
+    if st.button("Nueva consulta"):
         _reset()
         st.rerun()
 
 
 # ── Pestaña de métricas ───────────────────────────────────────────────────────
 
-def _render_metrics_tab() -> None:
-    settings = _resolve_settings()
+def _render_metrics_tab(settings) -> None:
     metrics = compute_summary_metrics(settings.feedback_log_path)
 
     st.subheader("Impacto acumulado")
     if metrics["total_interacciones"] == 0:
-        st.info("Aún no hay consultas registradas. Las métricas aparecerán aquí en cuanto empieces a usar el asistente.")
-        return
+        st.info("Aún no hay consultas registradas.")
+    else:
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Consultas totales", metrics["total_interacciones"])
+        col2.metric("Tasa de respuesta", f"{metrics['tasa_respuesta'] * 100:.0f}%")
+        col3.metric("Tasa de escalado", f"{metrics['tasa_escalado'] * 100:.0f}%")
+        col4.metric("Tasa de acierto", f"{metrics['tasa_acierto'] * 100:.0f}%")
+        st.caption("Tasa de acierto calculada sobre respuestas valoradas con 👍/👎.")
+        _render_gap_log(settings.gap_log_path)
 
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Consultas totales", metrics["total_interacciones"])
-    col2.metric("Tasa de respuesta", f"{metrics['tasa_respuesta'] * 100:.0f}%")
-    col3.metric("Tasa de escalado", f"{metrics['tasa_escalado'] * 100:.0f}%")
-    col4.metric("Tasa de acierto", f"{metrics['tasa_acierto'] * 100:.0f}%")
-    st.caption(
-        "La tasa de acierto se calcula solo sobre las respuestas valoradas con 👍/👎. "
-        "El resto cuentan como sin evaluar."
+    st.divider()
+    st.subheader("Mantenimiento")
+
+    cache_enabled = st.toggle(
+        "Caché semántico activo",
+        value=st.session_state.get("cache_enabled", True),
+        help=(
+            "Cuando está activo, preguntas similares a respuestas validadas (👍) "
+            "se sirven sin llamar al LLM. Desactívalo para forzar el pipeline completo."
+        ),
     )
+    st.session_state["cache_enabled"] = cache_enabled
 
-    _render_gap_log(settings.gap_log_path)
+    st.caption("Actualiza el índice cuando añadas o modifiques documentos en `docs/`.")
+    if st.button("Reindexar documentación", use_container_width=True):
+        try:
+            with st.spinner("Reindexando… puede tardar 1-2 minutos"):
+                result = index_documents(settings)
+            st.success(
+                f"Reindexado completado: {result['upserted']} chunks actualizados, "
+                f"{result['deleted']} obsoletos eliminados."
+            )
+            _load_collection.clear()
+        except Exception as exc:  # noqa: BLE001
+            st.error(f"Error al reindexar. ¿Ollama está en marcha?\n\nDetalle: {exc}")
 
 
 def _render_gap_log(gap_log_path: Path) -> None:
@@ -270,10 +454,7 @@ def _render_gap_log(gap_log_path: Path) -> None:
         st.success("Ninguna consulta ha tenido que escalarse todavía.")
         return
 
-    st.caption(
-        "Cada fila es una consulta que el asistente no pudo responder con confianza. "
-        "Son candidatas directas a nueva documentación."
-    )
+    st.caption("Consultas que el asistente no pudo responder con confianza — candidatas a nueva documentación.")
 
     timestamps = pd.to_datetime(gap_df["timestamp"], errors="coerce", utc=True)
     weekly = timestamps.dt.strftime("%Y-S%V").value_counts().sort_index()
@@ -281,14 +462,12 @@ def _render_gap_log(gap_log_path: Path) -> None:
         st.bar_chart(weekly, x_label="Semana", y_label="Huecos detectados")
 
     st.dataframe(
-        gap_df[GAP_LOG_COLUMNS].rename(
-            columns={
-                "timestamp": "Fecha",
-                "pregunta": "Consulta",
-                "modo": "Modo",
-                "confianza_mejor_resultado": "Confianza máx.",
-            }
-        ),
+        gap_df[GAP_LOG_COLUMNS].rename(columns={
+            "timestamp": "Fecha",
+            "pregunta": "Consulta",
+            "modo": "Modo",
+            "confianza_mejor_resultado": "Confianza máx.",
+        }),
         width="stretch",
         hide_index=True,
     )
@@ -297,24 +476,26 @@ def _render_gap_log(gap_log_path: Path) -> None:
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
+    settings = _resolve_settings()
+    configure_logging(settings)
+
     st.set_page_config(
-        page_title="Asistente de recepción",
+        page_title="Asistente de recepción · Singular Hotel",
         page_icon="🛎️",
         layout="centered",
+        initial_sidebar_state="collapsed",
     )
+    _inject_css()
     _init_state()
+    _render_header()
 
-    st.title("🛎️ Asistente de recepción")
-    st.caption("Consulta la documentación interna del hotel en lenguaje natural.")
-
-    settings = _resolve_settings()
     collection = _resolve_collection(settings)
 
     consulta_tab, metrics_tab = st.tabs(["Consulta", "Métricas"])
     with consulta_tab:
-        _render_consulta_tab(collection)
+        _render_consulta_tab(collection, settings)
     with metrics_tab:
-        _render_metrics_tab()
+        _render_metrics_tab(settings)
 
 
 if __name__ == "__main__":

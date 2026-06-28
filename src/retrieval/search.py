@@ -36,6 +36,7 @@ def search(
     collection,
     top_k: int,
     where: dict[str, Any] | None = None,
+    precomputed_embedding: list[float] | None = None,
 ) -> list[SearchResult]:
     """
     Busca los `top_k` chunks más similares a `query` en `collection`.
@@ -43,16 +44,20 @@ def search(
     `where` permite filtrar por metadata de ChromaDB si hace falta (por
     ejemplo, por doc_type). El retrieval ya no filtra por modo (ver ADR
     0011): trae lo más relevante sin importar la subsección del documento.
+
+    `precomputed_embedding` permite reutilizar un embedding ya calculado (p. ej.
+    el que se computa en orchestration/pipeline.py para el caché semántico) y
+    evitar una segunda llamada a Ollama para la misma consulta.
     """
     if not query.strip():
         raise ValueError("La consulta no puede estar vacía")
     if top_k <= 0:
         raise ValueError("top_k debe ser mayor que 0")
 
-    [embedding] = embedding_client.embed_batch([query])
+    embedding = precomputed_embedding if precomputed_embedding is not None else embedding_client.embed_batch([query])[0]
 
     response = collection.query(
-        query_embeddings=[embedding],
+        query_embeddings=[list(embedding)],
         n_results=top_k,
         where=where,
         include=["documents", "metadatas", "distances"],

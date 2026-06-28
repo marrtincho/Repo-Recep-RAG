@@ -22,6 +22,7 @@ class OllamaEmbeddingClient:
         self.model = model
         self.host = host
         self._client = ollama.Client(host=host)
+        self._use_batch_api = hasattr(self._client, "embed")
 
     def embed_batch(self, texts: list[str]) -> list[list[float]]:
         """
@@ -35,7 +36,7 @@ class OllamaEmbeddingClient:
         if not texts:
             return []
         try:
-            if hasattr(self._client, "embed"):
+            if self._use_batch_api:
                 response = self._client.embed(model=self.model, input=texts)
                 return [list(vector) for vector in response["embeddings"]]
             return [self._embed_one(text) for text in texts]

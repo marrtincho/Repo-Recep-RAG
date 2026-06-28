@@ -40,6 +40,10 @@ def _default_test_settings() -> SimpleNamespace:
         feedback_log_path=base / "feedback_log.csv",
         gap_log_path=base / "gap_log.csv",
         mode_default="directo",
+        log_level="WARNING",
+        log_file=base / "test.log",
+        semantic_cache_path=base / "answer_cache.json",
+        semantic_cache_similarity_threshold=0.85,
     )
 
 
@@ -54,7 +58,7 @@ class FakeCollection:
 
 
 class FakeOrchestrationResult:
-    def __init__(self, text, sources, interaction_id, was_escalated, is_clarification=False, confidence=0.9, mode="directo"):
+    def __init__(self, text, sources, interaction_id, was_escalated, is_clarification=False, confidence=0.9, mode="directo", was_cached=False):
         self.text = text
         self.sources = sources
         self.interaction_id = interaction_id
@@ -62,6 +66,7 @@ class FakeOrchestrationResult:
         self.is_clarification = is_clarification
         self.confidence = confidence
         self.mode = mode
+        self.was_cached = was_cached
 
 
 def _make_app(collection=None, ask_fn=None, submit_feedback_fn=None, settings=None) -> AppTest:
@@ -75,6 +80,13 @@ def _make_app(collection=None, ask_fn=None, submit_feedback_fn=None, settings=No
     return at
 
 
+def _submit_query(at: AppTest, query: str) -> AppTest:
+    """Rellena el campo de texto y envía el formulario."""
+    at.text_input[0].set_value(query)
+    next(b for b in at.button if b.label == "Consultar").click().run()
+    return at
+
+
 class TestColdStart:
     def test_shows_index_missing_notice_when_no_collection(self):
         at = _make_app(collection=None).run()
@@ -82,9 +94,9 @@ class TestColdStart:
         warnings = " ".join(w.value for w in at.warning)
         assert "reindex.py" in warnings
 
-    def test_no_chat_input_rendered_without_an_index(self):
+    def test_no_query_input_rendered_without_an_index(self):
         at = _make_app(collection=None).run()
-        assert len(at.chat_input) == 0
+        assert len(at.text_input) == 0
 
     def test_metrics_tab_shows_empty_state_with_no_interactions(self):
         at = _make_app(collection=None).run()
@@ -119,22 +131,22 @@ class TestChatFlow:
         )
         at = _make_app(collection=FakeCollection(10), ask_fn=lambda *a, **k: fake_result).run()
 
-        at.chat_input[0].set_value("¿cómo gestiono un overbooking?").run()
+        _submit_query(at, "¿cómo gestiono un overbooking?")
 
         assert not at.exception
         markdowns = " ".join(m.value for m in at.markdown)
         assert "overbooking" in markdowns.lower()
 
-    def test_sources_shown_as_caption(self):
+    def test_sources_shown_after_response(self):
         fake_result = FakeOrchestrationResult(
             text="Respuesta.", sources=["overbooking.md", "contactos.md"], interaction_id="x", was_escalated=False,
         )
         at = _make_app(collection=FakeCollection(10), ask_fn=lambda *a, **k: fake_result).run()
-        at.chat_input[0].set_value("pregunta").run()
+        _submit_query(at, "pregunta")
 
-        captions = " ".join(c.value for c in at.caption)
-        assert "overbooking.md" in captions
-        assert "contactos.md" in captions
+        markdowns = " ".join(m.value for m in at.markdown)
+        assert "overbooking.md" in markdowns
+        assert "contactos.md" in markdowns
 
     def test_escalated_response_shows_no_feedback_buttons(self):
         fake_result = FakeOrchestrationResult(
@@ -144,7 +156,7 @@ class TestChatFlow:
             was_escalated=True,
         )
         at = _make_app(collection=FakeCollection(10), ask_fn=lambda *a, **k: fake_result).run()
-        at.chat_input[0].set_value("algo que no está documentado").run()
+        _submit_query(at, "algo que no está documentado")
 
         assert not at.exception
         button_labels = [b.label for b in at.button]
@@ -153,7 +165,7 @@ class TestChatFlow:
     def test_answered_response_shows_feedback_buttons(self):
         fake_result = FakeOrchestrationResult(text="Respuesta.", sources=["a.md"], interaction_id="x", was_escalated=False)
         at = _make_app(collection=FakeCollection(10), ask_fn=lambda *a, **k: fake_result).run()
-        at.chat_input[0].set_value("pregunta").run()
+        _submit_query(at, "pregunta")
 
         button_labels = [b.label for b in at.button]
         assert any("Útil" in label for label in button_labels)
@@ -167,7 +179,7 @@ class TestChatFlow:
             ask_fn=lambda *a, **k: fake_result,
             submit_feedback_fn=lambda interaction_id, value, settings: calls.append((interaction_id, value)),
         ).run()
-        at.chat_input[0].set_value("una consulta").run()
+        _submit_query(at, "una consulta")
 
         yes_button = next(b for b in at.button if "Útil" in b.label)
         yes_button.click().run()
@@ -182,7 +194,7 @@ class TestChatFlow:
             ask_fn=lambda *a, **k: fake_result,
             submit_feedback_fn=lambda *a, **k: None,
         ).run()
-        at.chat_input[0].set_value("una consulta").run()
+        _submit_query(at, "una consulta")
 
         yes_button = next(b for b in at.button if "Útil" in b.label)
         yes_button.click().run()
@@ -196,11 +208,11 @@ class TestChatFlow:
             raise RuntimeError("Ollama caído")
 
         at = _make_app(collection=FakeCollection(10), ask_fn=_raise).run()
-        at.chat_input[0].set_value("una consulta").run()
+        _submit_query(at, "una consulta")
 
         assert not at.exception
-        markdowns = " ".join(m.value for m in at.markdown)
-        assert "Ollama" in markdowns
+        errors = " ".join(e.value for e in at.error)
+        assert "Ollama" in errors
 
     def test_mode_toggle_offers_both_modes(self):
         at = _make_app(collection=FakeCollection(10)).run()
@@ -218,25 +230,8 @@ class TestChatFlow:
             is_clarification=True,
         )
         at = _make_app(collection=FakeCollection(10), ask_fn=lambda *a, **k: fake_result).run()
-        at.chat_input[0].set_value("tengo un overbooking").run()
+        _submit_query(at, "tengo un overbooking")
 
         assert not at.exception
         button_labels = [b.label for b in at.button]
         assert not any("Útil" in label for label in button_labels)
-
-    def test_history_grows_across_turns(self):
-        received_history = []
-
-        def _ask(query, mode, settings, embedding_client, collection, generation_client, history=None):
-            received_history.append(history)
-            return FakeOrchestrationResult(text=f"respuesta a: {query}", sources=[], interaction_id=query, was_escalated=False)
-
-        at = _make_app(collection=FakeCollection(10), ask_fn=_ask).run()
-
-        at.chat_input[0].set_value("primera pregunta").run()
-        at.chat_input[0].set_value("segunda pregunta").run()
-
-        assert not at.exception
-        assert received_history[0] == []  # primer turno: sin historial previo
-        assert ("user", "primera pregunta") in received_history[1]
-        assert ("assistant", "respuesta a: primera pregunta") in received_history[1]

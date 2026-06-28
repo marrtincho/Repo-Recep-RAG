@@ -7,7 +7,7 @@
 
 models:
   embedding: "bge-m3"
-  generation: "llama3.1:8b"        # alternativa equivalente: "mistral:7b, llama3.1:8b, gemma4:e4b"
+  generation: "llama3.2:3b"        # alternativa equivalente: "granite3-dense:2b, llama3.1:8b, gemma4:e4b"
   ollama_host: "http://localhost:11434"
 
 paths:
@@ -42,7 +42,7 @@ chunking:
     strategy: "by_entry"
 
 retrieval:
-  confidence_threshold: 0.50   # bajado de 0.52: preguntas reales con frases coloquiales (no la
+  confidence_threshold: 0.5  # bajado de 0.52: preguntas reales con frases coloquiales (no la
                               # redacción exacta del documento) caían en 0.51-0.52 y escalaban
                               # de más. El solape con "sin respuesta" (hasta ~0.60) sigue ahí,
                               # por eso el prompt mantiene una 2a capa de escalado tras esto.
@@ -62,3 +62,8 @@ conversation:
 logging:
   level: "INFO"
   log_file: "metrics/interactions.log"
+
+semantic_cache:
+  path: "metrics/answer_cache.json"
+  similarity_threshold: 0.85  # más alto que confidence_threshold (0.50): solo sirve
+                               # del caché si la pregunta es semánticamente muy similar

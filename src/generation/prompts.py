@@ -16,6 +16,7 @@ negarse a responder incluso habiendo pasado el umbral.
 
 from __future__ import annotations
 
+from functools import lru_cache
 from pathlib import Path
 
 from src.retrieval.search import SearchResult
@@ -65,6 +66,7 @@ _MODE_INSTRUCTIONS = {
 DEFAULT_MODE = "explicado"
 
 
+@lru_cache(maxsize=4)
 def build_system_prompt(mode: str, allow_clarification: bool = False) -> str:
     """Construye el system prompt para el modo dado ('directo' o 'explicado').
 
