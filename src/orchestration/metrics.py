@@ -39,7 +39,11 @@ RESULTADOS_VALIDOS = (RESULTADO_RESPONDIDA, RESULTADO_ESCALADA, RESULTADO_ACLARA
 
 def _read_or_create(path: Path, columns: list[str]) -> pd.DataFrame:
     if path.exists():
-        return pd.read_csv(path, dtype=str, keep_default_na=False)
+        df = pd.read_csv(path, dtype=str, keep_default_na=False)
+        for col in columns:
+            if col not in df.columns:
+                df[col] = ""
+        return df.reindex(columns=columns, fill_value="")
     return pd.DataFrame(columns=columns)
 
 

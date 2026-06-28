@@ -14,6 +14,7 @@ data/chroma_db/*
 # reales del hotel ni de huéspedes. Usar docs/ con contenido ficticio en la
 # versión pública; mantener los reales en un repo privado aparte.
 docs/**/*.real.*
+docs/directorios/directorio_contactos_hotel.md
 
 # --- Métricas operativas (pueden contener preguntas reales del personal) ---
 metrics/*.csv
