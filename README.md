@@ -9,12 +9,14 @@ hotel, sin entrenar ni ajustar ningún modelo.
 **Alcance v1:** solo conocimiento fijo. No integra novedades del turno ni
 sistemas externos (p. ej. Ulyses).
 
-> **Estado:** sistema completo de punta a punta y testeado (187 tests
-> pasando): ingesta, embeddings/indexado, retrieval, generation,
+> **Estado:** sistema completo de punta a punta y testeado (más de 200
+> tests pasando): ingesta, embeddings/indexado, retrieval, generation,
 > orchestration e interfaz Streamlit. El asistente mantiene memoria de
-> conversación y puede pedir aclaraciones en vez de adivinar o escalar
-> (ADR 0010) — ya no es de un solo turno. Validado con Ollama real en local.
-> El detalle semana a semana vive en el historial de commits.
+> conversación, puede pedir aclaraciones en vez de adivinar o escalar
+> (ADR 0010), e incluye un **caché semántico** que sirve respuestas
+> validadas (👍) sin invocar ChromaDB ni el LLM — crítico en hardware de
+> baja potencia. Validado con Ollama real en local. El detalle semana a
+> semana vive en el historial de commits.
 
 ---
 
@@ -38,6 +40,15 @@ Embeddings (nomic-embed-text vía Ollama)
             ↓
 ChromaDB — vectores + metadatos (tipo, categoría, fecha)
             ↓
+       Embedding de consulta (una sola vez)
+            ↓
+  ┌─── Caché semántico (answer_cache.json) ───┐
+  │  hit (similitud >= umbral, validado 👍)   │
+  │         ↓                                 │
+  │  respuesta instantánea (sin LLM)          │
+  └────────────────────────────────────────────┘
+            │ miss
+            ↓
 Retrieval + umbral de confianza calibrado
             ↓
      ┌──────┴──────┐
@@ -48,6 +59,7 @@ información"   (modo directo / explicado)
      └──────┬──────┘
             ↓
 Registro de métricas (correcta / incorrecta / sin responder)
+Feedback 👍 activa entrada en caché; 👎 la desactiva
             ↓
 Interfaz Streamlit (chat + toggle + panel de métricas)
 ```
@@ -74,10 +86,13 @@ hotel-recepcion-rag/
 ├── README.md
 ├── requirements.txt
 ├── .gitignore
+├── .streamlit/
+│   └── config.toml            # tema y opciones de la app Streamlit
 ├── config/
 │   └── settings.yaml          # toda la config ajustable vive aquí
 ├── docs/
-│   ├── procedimientos/
+│   ├── procedimientos/        # check-in, reservas, llaves, facturación, parking,
+│   │                          # upselling, cuadre de caja, auditoría nocturna…
 │   ├── directorios/
 │   ├── inventarios/
 │   └── decisiones/            # registro de decisiones de diseño (ADRs)
@@ -102,15 +117,18 @@ hotel-recepcion-rag/
 │   │   ├── ollama_generator.py   # wrapper sobre ollama.Client().chat()
 │   │   └── pipeline.py           # generate_answer(): filtra contexto, arma prompt, llama al modelo
 │   └── orchestration/
+│       ├── answer_cache.py       # caché semántico: lookup/add/vote por similitud coseno
 │       ├── metrics.py            # registro CSV, feedback diferido por interaction_id, agregados
-│       └── pipeline.py           # ask(): el único punto de entrada que necesita la interfaz
+│       └── pipeline.py           # ask(): pipeline completo + caché; submit_feedback()
 ├── interface/
 │   └── app.py                  # chat (toggle directo/explicado, feedback) + panel de métricas
 ├── scripts/
 │   └── reindex.py              # CLI: reconstruye el índice de ChromaDB desde docs/
 ├── metrics/
+│   ├── answer_cache.json       # entradas del caché semántico (pares consulta↔respuesta validada)
 │   ├── gap_log.csv             # preguntas escaladas sin respuesta
-│   └── feedback_log.csv        # valoraciones 👍/👎 del usuario
+│   ├── feedback_log.csv        # valoraciones 👍/👎 del usuario
+│   └── interactions.log        # log de interacciones para auditoría
 └── tests/
 ```
 
@@ -185,6 +203,22 @@ arranque en frío, el flujo de chat y el feedback con
 [`streamlit.testing.v1.AppTest`](https://docs.streamlit.io/develop/api-reference/app-testing),
 sin necesitar Ollama ni navegador (ver
 [`docs/decisiones/0009-session-state-como-costura-de-tests.md`](docs/decisiones/0009-session-state-como-costura-de-tests.md)).
+
+## Caché semántico
+
+El caché evita invocar ChromaDB y el LLM cuando una pregunta ya fue
+respondida y validada. El ciclo de vida de una entrada:
+
+1. Cada respuesta generada crea una entrada **tentativa** (`active=False`).
+2. Un 👍 la **activa** (`active=True`); a partir de ahí se sirve en
+   consultas con similitud coseno >= umbral configurable.
+3. Un 👎 incrementa `negative_votes`; si iguala o supera a `positive_votes`,
+   la entrada vuelve a `active=False`.
+
+Las preguntas casi idénticas (similitud >= 0.95) se fusionan en la entrada
+existente en vez de crear duplicados. El caché se persiste en
+`metrics/answer_cache.json` y se configura desde `config/settings.yaml`
+(`semantic_cache_similarity_threshold`, `semantic_cache_path`).
 
 ## Desarrollo
 

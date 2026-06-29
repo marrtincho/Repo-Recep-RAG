@@ -10,15 +10,20 @@ data/chroma_db/*
 !data/chroma_db/.gitkeep
 
 # --- Datos sensibles del hotel ---
-# Si este repo se hace público para portfolio, NUNCA deben subirse documentos
-# reales del hotel ni de huéspedes. Usar docs/ con contenido ficticio en la
-# versión pública; mantener los reales en un repo privado aparte.
+# Los documentos reales (procedimientos, directorio, referencias) solo existen
+# en local. En GitHub se versiona únicamente el contenido de ejemplo (ejemplo_*).
+docs/procedimientos/*
+!docs/procedimientos/ejemplo_*.md
+docs/referencias/*
+!docs/referencias/ejemplo_*.md
+docs/directorios/*
+!docs/directorios/ejemplo_*.md
 docs/**/*.real.*
-docs/directorios/directorio_contactos_hotel.md
 
 # --- Métricas operativas (pueden contener preguntas reales del personal) ---
 metrics/*.csv
 metrics/*.log
+metrics/*.json
 !metrics/.gitkeep
 
 # --- Config local con secretos, si los hubiera ---
