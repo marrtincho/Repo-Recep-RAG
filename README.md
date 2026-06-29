@@ -121,20 +121,23 @@ hotel-recepcion-rag/
 │       ├── metrics.py            # registro CSV, feedback diferido por interaction_id, agregados
 │       └── pipeline.py           # ask(): pipeline completo + caché; submit_feedback()
 ├── interface/
-│   └── app.py                  # chat (toggle directo/explicado, feedback) + panel de métricas
+│   ├── app.py                  # chat (toggle directo/explicado, feedback) + panel de métricas
+│   └── logo.png
 ├── scripts/
 │   └── reindex.py              # CLI: reconstruye el índice de ChromaDB desde docs/
-├── metrics/
-│   ├── answer_cache.json       # entradas del caché semántico (pares consulta↔respuesta validada)
+├── metrics/                    # solo en local (gitignoreado): contiene datos operativos reales
+│   ├── answer_cache.json       # entradas del caché semántico
 │   ├── gap_log.csv             # preguntas escaladas sin respuesta
 │   ├── feedback_log.csv        # valoraciones 👍/👎 del usuario
 │   └── interactions.log        # log de interacciones para auditoría
 └── tests/
 ```
 
-`data/chroma_db/` (base vectorial persistida) y cualquier documento real del
-hotel quedan fuera del repo — ver `.gitignore`. La versión pública usa
-documentos de ejemplo ficticios que replican la estructura sin datos reales.
+`data/chroma_db/` y `metrics/` quedan fuera del repo (datos operativos reales).
+Los documentos de `docs/procedimientos/`, `docs/directorios/` y `docs/referencias/`
+también son locales; en el repo solo se versionan los archivos `ejemplo_*.md` de
+cada carpeta, que replican la estructura con contenido ficticio para que el sistema
+funcione en un clon limpio.
 
 ## Instalación
 
