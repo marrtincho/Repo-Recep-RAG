@@ -182,8 +182,7 @@ python scripts/reindex.py
 
 Es seguro ejecutarlo cuantas veces haga falta: es idempotente (no duplica
 chunks ya indexados) y poda del índice cualquier chunk cuyo documento de
-origen haya cambiado o desaparecido — ver
-[`docs/decisiones/0005-indexado-idempotente-con-poda.md`](docs/decisiones/0005-indexado-idempotente-con-poda.md).
+origen haya cambiado o desaparecido
 
 Los tests de `tests/test_indexer.py` no requieren Ollama (usan un cliente de
 embeddings fake y ChromaDB en modo efímero). Los de
@@ -202,10 +201,23 @@ streamlit run interface/app.py
 
 Si todavía no hay nada indexado, la app lo indica claramente en vez de
 fallar — no hace falta adivinar qué pasó. `tests/test_app.py` cubre ese
-arranque en frío, el flujo de chat y el feedback con
-[`streamlit.testing.v1.AppTest`](https://docs.streamlit.io/develop/api-reference/app-testing),
-sin necesitar Ollama ni navegador (ver
-[`docs/decisiones/0009-session-state-como-costura-de-tests.md`](docs/decisiones/0009-session-state-como-costura-de-tests.md)).
+arranque en frío.
+
+## Caché semántico
+
+El caché evita invocar ChromaDB y el LLM cuando una pregunta ya fue
+respondida y validada. El ciclo de vida de una entrada:
+
+1. Cada respuesta generada crea una entrada **tentativa** (`active=False`).
+2. Un 👍 la **activa** (`active=True`); a partir de ahí se sirve en
+   consultas con similitud coseno >= umbral configurable.
+3. Un 👎 incrementa `negative_votes`; si iguala o supera a `positive_votes`,
+   la entrada vuelve a `active=False`.
+
+Las preguntas casi idénticas (similitud >= 0.95) se fusionan en la entrada
+existente en vez de crear duplicados. El caché se persiste en
+`metrics/answer_cache.json` y se configura desde `config/settings.yaml`
+(`semantic_cache_similarity_threshold`, `semantic_cache_path`).
 
 ## Caché semántico
 
@@ -229,7 +241,3 @@ Las preguntas de validación que se usan para calibrar el sistema viven como
 test suite real en `tests/`, no solo como pruebas manuales. Cada interacción
 del asistente registra pregunta, fragmento recuperado, confianza, decisión
 (responder/escalar) y modo usado — la base del panel de métricas.
-
-Decisiones técnicas relevantes se documentan en
-[`docs/decisiones/`](docs/decisiones/) a medida que se toman, no
-retroactivamente al final del proyecto.
